@@ -1,9 +1,11 @@
 /* ============================================================
    onboarding.js  →  LifeOS.Onboarding
-   Phase 1 flow controller. Renders the current section from
-   Schema, autosaves every answer to Store, supports pause/resume
-   (position persisted), conditional fields, validation, and the
-   final "generate targets" step.
+   Flow controller. Autosaves every answer, supports resume,
+   conditional fields, validation, and the final generate step.
+
+   MOBILE UX: selecting an option updates the value IN PLACE with
+   zero scrolling and no full re-render. Only moving between
+   sections scrolls to the top. This eliminates the scroll-jump.
    ============================================================ */
 (function (NS) {
   'use strict';
@@ -19,7 +21,6 @@
       this.render();
     },
 
-    /* one set of delegated listeners on the persistent #app root */
     wire() {
       if (this.wired) return;
       this.wired = true;
@@ -35,8 +36,10 @@
       const p = this.profile();
       return sec.fields.filter(f => !f.when || f.when(p));
     },
+    /* signature of which fields are visible — to detect conditional reveals */
+    _visIds() { return this.visibleFields(this.section()).map(f => f.id).join(','); },
 
-    /* ---------------- render ---------------- */
+    /* ---------------- full section render (navigation only) ---------------- */
     render() {
       if (State.route !== 'onboarding') return;
       const sec = this.section();
@@ -47,9 +50,7 @@
       const pct = Math.round((i / (total - 1)) * 100);
       const isLast = i === total - 1;
       const hasRequired = this.visibleFields(sec).some(f => f.required);
-
-      const fieldsHTML = this.visibleFields(sec)
-        .map(f => UI.field(f, p[f.id])).join('');
+      const fieldsHTML = this.visibleFields(sec).map(f => UI.field(f, p[f.id])).join('');
 
       this.root.innerHTML = `
       <div class="ob">
@@ -62,7 +63,7 @@
         ${UI.dots(total, i, furthest)}
         <div class="ob-body">
           ${UI.sectionHead(sec)}
-          <div style="margin-top:18px">${fieldsHTML}</div>
+          <div class="ob-fields" id="ob-fields">${fieldsHTML}</div>
           <div class="err-line" data-err></div>
         </div>
         <div class="ob-nav">
@@ -72,7 +73,18 @@
             : `<button class="btn btn-primary" data-action="next">Continue</button>`}
         </div>
       </div>`;
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // section change → top, instantly (snappy, native). No smooth scroll.
+      window.scrollTo(0, 0);
+    },
+
+    /* ---------------- in-place field re-render (conditional reveals) ---------------- */
+    renderFields() {
+      const box = this.root.querySelector('#ob-fields');
+      if (!box) return this.render();
+      const y = window.scrollY;                 // preserve exact scroll position
+      const p = this.profile();
+      box.innerHTML = this.visibleFields(this.section()).map(f => UI.field(f, p[f.id])).join('');
+      window.scrollTo(0, y);
     },
 
     /* ---------------- events ---------------- */
@@ -88,23 +100,37 @@
       if (a === 'generate') return this.finalize();
 
       if (a === 'segment') {
+        const before = this._visIds();
         this.setField(t.dataset.field, t.dataset.value);
-        this.render(); // reflect selection + reveal conditional fields
+        const seg = t.closest('.seg');
+        if (seg) seg.querySelectorAll('.seg-opt').forEach(o => o.classList.toggle('on', o === t));
+        if (this._visIds() !== before) this.renderFields();   // only if a field appears/hides
+        this.clearError();
+        return;
+      }
+      if (a === 'chip') {
+        const before = this._visIds();
+        this.toggleChip(t.dataset.field, t.dataset.value);
+        const arr = Store.get('profile.' + t.dataset.field, []) || [];
+        const box = t.closest('.chips');
+        if (box) box.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', arr.indexOf(c.dataset.value) >= 0));
+        if (this._visIds() !== before) this.renderFields();
+        this.clearError();
+        return;
       }
       if (a === 'toggle') {
         const cur = Store.get('profile.' + t.dataset.field, false);
         this.setField(t.dataset.field, !cur);
-        this.render();
-      }
-      if (a === 'chip') {
-        this.toggleChip(t.dataset.field, t.dataset.value);
-        this.render();
+        t.classList.toggle('on', !cur);
+        this.renderFields();                                   // toggles gate conditional fields
+        return;
       }
       if (a === 'photo-rm') {
         const photos = Object.assign({}, Store.get('profile.photos', {}));
         delete photos[t.dataset.slot];
         this.setField('photos', photos);
-        this.render();
+        this.renderFields();
+        return;
       }
     },
 
@@ -118,9 +144,7 @@
         return;
       }
       if (el.dataset.field && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
-        // live text/number — save without re-render to keep focus
-        const val = el.type === 'number' ? el.value : el.value;
-        this.setField(el.dataset.field, val);
+        this.setField(el.dataset.field, el.value);            // live save, no re-render (keeps focus + scroll)
         this.clearError();
       }
     },
@@ -130,7 +154,7 @@
       const el = e.target;
       if (el.tagName === 'SELECT' && el.dataset.field) {
         this.setField(el.dataset.field, el.value);
-        this.render();
+        this.renderFields();
         return;
       }
       if (el.dataset.action === 'photo' && el.files && el.files[0]) {
@@ -139,8 +163,8 @@
           const photos = Object.assign({}, Store.get('profile.photos', {}));
           photos[el.dataset.slot] = dataUrl;
           this.setField('photos', photos);
-          this.render();
-        } catch (err) { console.warn('photo failed', err); }
+          this.renderFields();
+        } catch (err) { /* ignore */ }
       }
     },
 
@@ -162,15 +186,13 @@
     validate() {
       const sec = this.section();
       for (const f of this.visibleFields(sec)) {
-        if (f.required && U.isEmpty(Store.get('profile.' + f.id))) {
-          return f.label || 'This field';
-        }
+        if (f.required && U.isEmpty(Store.get('profile.' + f.id))) return f.label || 'This field';
       }
       return null;
     },
 
     showError(msg) { const e = this.root.querySelector('[data-err]'); if (e) e.textContent = msg; },
-    clearError() { const e = this.root.querySelector('[data-err]'); if (e) e.textContent = ''; },
+    clearError() { const e = this.root.querySelector('[data-err]'); if (e && e.textContent) e.textContent = ''; },
 
     next() {
       const missing = this.validate();
@@ -197,10 +219,8 @@
     },
 
     finalize() {
-      // global required check (in case earlier sections were skipped)
       const missing = Schema.REQUIRED.filter(id => U.isEmpty(Store.get('profile.' + id)));
       if (missing.length) {
-        // jump back to the earliest section containing a missing field
         const secIdx = Schema.SECTIONS.findIndex(s => s.fields.some(f => missing.includes(f.id)));
         Store.set('onboarding.sectionIndex', Math.max(0, secIdx), { immediate: true });
         this.render();

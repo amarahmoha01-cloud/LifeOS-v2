@@ -1,5 +1,5 @@
 /* LifeOS service worker — offline app shell cache. Bump CACHE to release updates. */
-const CACHE = 'lifeos-v2.0.2';
+const CACHE = 'lifeos-v2.0.3';
 const ASSETS = [
   './',
   'index.html',
