@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#080b11">
+<meta name="description" content="LifeOS — your personal health operating system">
+<title>LifeOS</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/styles.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LifeOS">
+</head>
+<body>
+  <div id="app" aria-live="polite"></div>
+  <noscript><div style="padding:40px;text-align:center;color:#fff;font-family:sans-serif">LifeOS needs JavaScript enabled to run.</div></noscript>
+
+  <!-- Load order = dependency order. Each file attaches to window.LifeOS via an IIFE. -->
+  <script src="src/utils.js"></script>
+  <script src="src/store.js"></script>
+  <script src="src/state.js"></script>
+  <script src="src/engine.js"></script>
+  <!-- Phase 2 engines -->
+  <script src="src/data/meals.js"></script>
+  <script src="src/nutrition.js"></script>
+  <script src="src/supplements.js"></script>
+  <script src="src/hydration.js"></script>
+  <script src="src/training.js"></script>
+  <!-- Phase 3 engines -->
+  <script src="src/data/quotes.js"></script>
+  <script src="src/scoring.js"></script>
+  <script src="src/skincare.js"></script>
+  <script src="src/log.js"></script>
+  <!-- Phase 4 engines -->
+  <script src="src/charts.js"></script>
+  <script src="src/progress.js"></script>
+  <!-- Phase 5 engine -->
+  <script src="src/game.js"></script>
+  <!-- Phase 6 coach -->
+  <script src="src/ai-provider.js"></script>
+  <script src="src/coach.js"></script>
+  <!-- Phase 7 knowledge -->
+  <script src="src/data/knowledge.js"></script>
+  <script src="src/timeline.js"></script>
+  <!-- app layer -->
+  <script src="src/schema.js"></script>
+  <script src="src/components.js"></script>
+  <script src="src/onboarding.js"></script>
+  <script src="src/dashboard.js"></script>
+  <!-- Phase 10 life modules (self-register via LifeOS.Modules) -->
+  <script src="src/modules/registry.js"></script>
+  <script src="src/modules/faith.js"></script>
+  <script src="src/modules/finance.js"></script>
+  <script src="src/modules/soon.js"></script>
+  <!-- Phase 9 registry (loads last, before bootstrap) -->
+  <script src="src/core.js"></script>
+  <script src="src/app.js"></script>
+  <script src="src/gestures.js"></script>
+  <script>
+    /* Service worker = offline + automatic updates. When a new version is
+       deployed to your URL, it installs quietly in the background and the app
+       reloads into it on next open — no reinstall, just like a normal app.
+       No-ops on file:// (needs https or localhost). */
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').then(function (reg) {
+          reg.addEventListener('updatefound', function () {
+            var nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener('statechange', function () {
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                location.reload();               // newer version ready -> swap in
+              }
+            });
+          });
+          reg.update();
+          setInterval(function () { reg.update(); }, 60 * 60 * 1000);   // hourly check
+          document.addEventListener('visibilitychange', function () { if (!document.hidden) reg.update(); });
+        }).catch(function () {});
+      });
+    }
+  </script>
+</body>
+</html>
